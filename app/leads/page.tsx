@@ -84,20 +84,33 @@ export default function LeadsPage() {
     try {
       setLoading(true);
 
+      // 🔍 DEBUG: Log the client ID being used
+      console.log("🔑 Config testClientId:", config.testClientId);
+      console.log("🔑 Type:", typeof config.testClientId);
+      console.log("🔑 Length:", config.testClientId?.length);
+      console.log("🔑 Is empty?:", config.testClientId === "");
+
       const { data, error } = await supabase
         .from("leads")
         .select("*")
         .eq("client_id", config.testClientId)
         .order("timestamp", { ascending: false });
 
+      // 🔍 DEBUG: Log the response
+      console.log("📊 Supabase Response:", { data, error });
+      console.log("📊 Data length:", data?.length);
+
       if (error) {
-        console.error("Error fetching leads:", error);
+        console.error("❌ Error fetching leads:", error);
+        alert(`Supabase Error: ${error.message}`); // Show alert
         return;
       }
 
+      console.log("✅ Leads fetched successfully:", data);
       setLeads(data || []);
     } catch (error) {
-      console.error("Unexpected error:", error);
+      console.error("💥 Unexpected error:", error);
+      alert(`Unexpected error: ${error}`); // Show alert
     } finally {
       setLoading(false);
     }
