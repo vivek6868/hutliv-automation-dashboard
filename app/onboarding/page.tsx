@@ -1,43 +1,51 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Building2, Phone, Mail, MapPin, Globe } from "lucide-react"
-import { createBusinessProfile } from "./actions"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, Building2, Phone, Mail, MapPin, Globe } from "lucide-react";
+import { createBusinessProfile } from "./actions";
 
 export default function OnboardingPage() {
-  const router = useRouter()
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setIsLoading(true)
-    setError(null)
-
-    const formData = new FormData(e.currentTarget)
-
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    const formData = new FormData(e.currentTarget);
     try {
-      const result = await createBusinessProfile(formData)
-
+      const result = await createBusinessProfile(formData);
       if (result.error) {
-        setError(result.error)
+        setError(result.error);
       } else {
-        // Redirect to dashboard on success
-        router.push("/")
-        router.refresh()
+        // Redirect to dashboard on success (FULL page refresh forces latest session + mem)
+        window.location.href = "/";
       }
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
+      setError("An unexpected error occurred. Please try again.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -54,8 +62,12 @@ export default function OnboardingPage() {
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-2">
             <Building2 className="w-8 h-8 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-bold">Welcome to WhatsApp Business CRM</CardTitle>
-          <CardDescription className="text-base">Let's set up your business profile to get started</CardDescription>
+          <CardTitle className="text-3xl font-bold">
+            Welcome to WhatsApp Business CRM
+          </CardTitle>
+          <CardDescription className="text-base">
+            Let's set up your business profile to get started
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -128,7 +140,9 @@ export default function OnboardingPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="whatsapp_number">WhatsApp Business Number *</Label>
+                  <Label htmlFor="whatsapp_number">
+                    WhatsApp Business Number *
+                  </Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-whatsapp" />
                     <Input
@@ -155,17 +169,32 @@ export default function OnboardingPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="address">Address</Label>
-                  <Input id="address" name="address" placeholder="Street address" disabled={isLoading} />
+                  <Input
+                    id="address"
+                    name="address"
+                    placeholder="Street address"
+                    disabled={isLoading}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="city">City</Label>
-                  <Input id="city" name="city" placeholder="Mumbai" disabled={isLoading} />
+                  <Input
+                    id="city"
+                    name="city"
+                    placeholder="Mumbai"
+                    disabled={isLoading}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
-                  <Input id="state" name="state" placeholder="Maharashtra" disabled={isLoading} />
+                  <Input
+                    id="state"
+                    name="state"
+                    placeholder="Maharashtra"
+                    disabled={isLoading}
+                  />
                 </div>
 
                 <div className="space-y-2 sm:col-span-2">
@@ -191,7 +220,11 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full h-12 text-base" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full h-12 text-base"
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -205,5 +238,5 @@ export default function OnboardingPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

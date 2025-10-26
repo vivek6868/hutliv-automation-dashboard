@@ -2,58 +2,81 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-let supabaseResponse = NextResponse.next({
-request,
-});
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
 
-const supabase = createServerClient(
-process.env.NEXT_PUBLIC_SUPABASE_URL!,
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-{
-cookies: {
-getAll() {
-return request.cookies.getAll();
-},
-setAll(cookiesToSet) {
-cookiesToSet.forEach(({ name, value }) =>
-request.cookies.set(name, value)
-);
-supabaseResponse = NextResponse.next({
-request,
-});
-cookiesToSet.forEach(({ name, value, options }) =>
-supabaseResponse.cookies.set(name, value, options)
-);
-},
-},
-}
-);
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            request.cookies.set(name, value, options)
+          );
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
 
-  // Refresh session if expired
-const {
-data: { user },
-} = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Redirect to login if not authenticated and trying to access protected routes
-if (!user && !request.nextUrl.pathname.startsWith("/login")) {
-const url = request.nextUrl.clone();
-url.pathname = "/login";
-return NextResponse.redirect(url);
-}
+  const path = request.nextUrl.pathname;
+  const isLogin = path.startsWith("/login");
+  const isOnboarding = path.startsWith("/onboarding");
+  const isCallback = path.startsWith("/auth/callback");
 
-  // Redirect to dashboard if authenticated and trying to access login
-if (user && request.nextUrl.pathname.startsWith("/login")) {
-const url = request.nextUrl.clone();
-url.pathname = "/";
-return NextResponse.redirect(url);
-}
+  if (!user) {
+    // If not authenticated, only allow login, onboarding, or callback
+    if (!isLogin && !isOnboarding && !isCallback) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+    return supabaseResponse;
+  }
 
-return supabaseResponse;
+  // If authenticated, check membership (except on certain public paths)
+  const { data: membership } = await supabase
+    .from("user_memberships")
+    .select("id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) {
+    // If on onboarding, let them stay; else redirect to onboarding
+    if (!isOnboarding) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+    return supabaseResponse;
+  }
+
+  // If has membership and tries to visit onboarding or login, redirect to dashboard
+  if ((isOnboarding || isLogin) && membership) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
+  return supabaseResponse;
 }
 
 export const config = {
-matcher: [
+  matcher: [
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-],
+  ],
 };
-
