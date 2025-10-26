@@ -1,23 +1,33 @@
-"use server"
+"use server";
 
-import { createServerClient } from "@/lib/supabase/server"
-import { revalidatePath } from "next/cache"
+import { createServerClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+
+// Helper for UI "preflight check"
+export async function checkWhatsappNumberUsed(whatsapp_number: string) {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("whatsapp_number", whatsapp_number)
+    .single();
+  return !!data; // true if in use, false if not
+}
 
 export async function createBusinessProfile(formData: FormData) {
   try {
-    const supabase = await createServerClient()
+    const supabase = await createServerClient();
 
     // Get the current user
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser()
-
+    } = await supabase.auth.getUser();
     if (userError || !user) {
-      return { error: "You must be logged in to create a business profile" }
+      return { error: "You must be logged in to create a business profile." };
     }
 
-    // Extract form data
+    // Extract and validate form data
     const businessData = {
       business_name: formData.get("business_name") as string,
       business_type: formData.get("business_type") as string,
@@ -29,41 +39,67 @@ export async function createBusinessProfile(formData: FormData) {
       whatsapp_number: formData.get("whatsapp_number") as string,
       website: formData.get("website") as string,
       country: "India",
-    }
-
-    // Validate required fields
+    };
     if (!businessData.business_name || !businessData.whatsapp_number) {
-      return { error: "Business name and WhatsApp number are required" }
+      return { error: "Business name and WhatsApp number are required." };
     }
 
-    // Create the client (business) record
-    const { data: client, error: clientError } = await supabase.from("clients").insert([businessData]).select().single()
+    // Final, backend-side uniqueness check for WhatsApp number
+    const { data: conflict } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("whatsapp_number", businessData.whatsapp_number)
+      .single();
+    if (conflict) {
+      return {
+        error:
+          "This WhatsApp number is already used in another business profile. Please use a different number.",
+      };
+    }
 
+    // Create the client/business record
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .insert([businessData])
+      .select()
+      .single();
     if (clientError) {
-      console.error("[v0] Error creating client:", clientError)
-      return { error: "Failed to create business profile. Please try again." }
+      // Most likely a race or unique constraint fail
+      return {
+        error:
+          "This WhatsApp number is already used in another business profile. Please use a different number.",
+      };
     }
 
     // Create the user_membership record
-    const { error: membershipError } = await supabase.from("user_memberships").insert([
-      {
-        user_id: user.id,
-        client_id: client.id,
-        role: "owner",
-      },
-    ])
-
+    const { error: membershipError } = await supabase
+      .from("user_memberships")
+      .insert([
+        {
+          user_id: user.id,
+          client_id: client.id,
+          role: "owner",
+        },
+      ]);
     if (membershipError) {
-      console.error("[v0] Error creating membership:", membershipError)
-      // Try to clean up the client record if membership creation fails
-      await supabase.from("clients").delete().eq("id", client.id)
-      return { error: "Failed to link business profile. Please try again." }
+      // Clean up the failed client record
+      await supabase.from("clients").delete().eq("id", client.id);
+      return { error: "Failed to link business profile. Please try again." };
     }
 
-    revalidatePath("/")
-    return { success: true, clientId: client.id }
-  } catch (error) {
-    console.error("[v0] Unexpected error:", error)
-    return { error: "An unexpected error occurred. Please try again." }
+    revalidatePath("/");
+    return { success: true, clientId: client.id };
+  } catch (error: any) {
+    // Detailed logic for unique violation/constraint error
+    if (
+      typeof error.message === "string" &&
+      error.message.includes("duplicate key")
+    ) {
+      return {
+        error:
+          "This WhatsApp number is already used in another business profile. Please use a different number.",
+      };
+    }
+    return { error: "An unexpected error occurred. Please try again." };
   }
 }

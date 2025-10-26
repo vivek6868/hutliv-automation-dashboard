@@ -1,7 +1,6 @@
 "use client";
 
-import type React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,62 +19,57 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Building2, Phone, Mail, MapPin, Globe } from "lucide-react";
-import { createBusinessProfile } from "./actions";
+import {
+  Loader2,
+  Building2,
+  Phone,
+  Mail,
+  MapPin,
+  Globe,
+  AlertCircle,
+  LogOut,
+} from "lucide-react";
+import { createBusinessProfile, checkWhatsappNumberUsed } from "./actions";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+
+// Sanitize WhatsApp number input - always keep "+91" prefix and max 10 digits
+function sanitizeWA(num: string) {
+  if (!num.startsWith("+91")) num = "+91" + num.replace(/^\+?91?/, "");
+  num = "+91" + num.slice(3).replace(/[^\d]/g, "");
+  return num.slice(0, 13); // +91 and 10 digits max
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // WhatsApp number state
+  const [whatsappNumber, setWhatsappNumber] = useState("+91");
+  const [isWhatsappUsed, setIsWhatsappUsed] = useState(false);
+  const [checkingNumber, setCheckingNumber] = useState(false);
+
+  // WhatsApp local validation: exactly 10 digits after +91 (total 13 chars)
+  const wa10Digits =
+    /^\+91\d{10}$/.test(whatsappNumber) && whatsappNumber.length === 13;
+  const waOnlyWarning =
+    /^\+91\d+$/.test(whatsappNumber) && whatsappNumber.length < 13;
+
   useEffect(() => {
     let active = true;
     async function checkMembership() {
-      console.log("[DEBUG] [OnboardingPage] Getting Supabase client");
       const supabase = getSupabaseBrowserClient();
-
-      console.log("[DEBUG] [OnboardingPage] Fetching user...");
       const {
         data: { user },
-        error: userError,
       } = await supabase.auth.getUser();
-      if (userError || !user) {
-        console.log(
-          "[DEBUG] [OnboardingPage] No user found or error:",
-          userError
-        );
-        return;
-      }
-      console.log("[DEBUG] [OnboardingPage] User is:", user);
-
-      console.log(
-        "[DEBUG] [OnboardingPage] Checking membership for user_id:",
-        user.id
-      );
-      // Query for user_id, not id
-      const { data: membership, error: membershipError } = await supabase
+      if (!user) return;
+      const { data: membership } = await supabase
         .from("user_memberships")
         .select("user_id")
         .eq("user_id", user.id)
         .single();
-
-      if (membershipError) {
-        console.log(
-          "[DEBUG] [OnboardingPage] Membership query error:",
-          membershipError
-        );
-      } else {
-        console.log("[DEBUG] [OnboardingPage] Membership result:", membership);
-      }
-
-      // If already a member, redirect
-      if (active && membership) {
-        console.log(
-          "[DEBUG] [OnboardingPage] Membership exists, redirecting to home..."
-        );
-        router.replace("/"); // SPA navigation, not full reload
-      }
+      if (active && membership) router.replace("/");
     }
     checkMembership();
     return () => {
@@ -83,46 +77,68 @@ export default function OnboardingPage() {
     };
   }, [router]);
 
+  async function handleWhatsappCheck(number: string) {
+    if (!/^\+91\d{10}$/.test(number)) return;
+    setCheckingNumber(true);
+    setError(null);
+    try {
+      const used = await checkWhatsappNumberUsed(number);
+      setIsWhatsappUsed(used);
+    } catch (err) {
+      setError("Error checking WhatsApp number. Try again.");
+      setIsWhatsappUsed(false);
+    } finally {
+      setCheckingNumber(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
     const formData = new FormData(e.currentTarget);
-    console.log(
-      "[DEBUG] [OnboardingPage] Submit business form data:",
-      Object.fromEntries(formData)
-    );
+    formData.set("whatsapp_number", whatsappNumber); // enforce sanitized value!
     try {
       const result = await createBusinessProfile(formData);
       if (result.error) {
-        console.log(
-          "[DEBUG] [OnboardingPage] Profile creation error:",
-          result.error
-        );
         setError(result.error);
       } else {
-        console.log(
-          "[DEBUG] [OnboardingPage] Profile creation success, redirecting..."
-        );
         router.replace("/");
       }
     } catch (err) {
-      console.log("[DEBUG] [OnboardingPage] Unexpected error:", err);
-      setError("An unexpected error occurred. Please try again.");
+      setError("Unexpected error. Please try again.");
     } finally {
       setIsLoading(false);
     }
   }
 
+  // LOGOUT handler
+  async function handleLogout() {
+    const supabase = createClientComponentClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login"; // or "/" or your landing page
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
-
       <Card className="w-full max-w-2xl relative backdrop-blur-sm bg-card/95 border-primary/20">
+        {/* LOGOUT BUTTON TOP RIGHT */}
+        <div className="absolute right-4 top-4 z-10">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            title="Logout"
+            onClick={handleLogout}
+            className="text-xs"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
+        </div>
         <CardHeader className="text-center space-y-2">
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-2">
             <Building2 className="w-8 h-8 text-primary" />
@@ -135,7 +151,11 @@ export default function OnboardingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-6"
+            autoComplete="off"
+          >
             {/* Business Information */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -148,7 +168,6 @@ export default function OnboardingPage() {
                   <Input
                     id="business_name"
                     name="business_name"
-                    placeholder="Enter your business name"
                     required
                     disabled={isLoading}
                   />
@@ -179,7 +198,6 @@ export default function OnboardingPage() {
                       id="phone_number"
                       name="phone_number"
                       type="tel"
-                      placeholder="+91 98765 43210"
                       className="pl-10"
                       disabled={isLoading}
                     />
@@ -193,7 +211,6 @@ export default function OnboardingPage() {
                       id="email"
                       name="email"
                       type="email"
-                      placeholder="business@example.com"
                       className="pl-10"
                       disabled={isLoading}
                     />
@@ -209,16 +226,43 @@ export default function OnboardingPage() {
                       id="whatsapp_number"
                       name="whatsapp_number"
                       type="tel"
-                      placeholder="+91 98765 43210"
                       className="pl-10"
                       required
                       disabled={isLoading}
+                      value={whatsappNumber}
+                      onChange={(e) => {
+                        const val = sanitizeWA(e.target.value);
+                        setWhatsappNumber(val);
+                        setIsWhatsappUsed(false);
+                        setError(null);
+                      }}
+                      onBlur={() => {
+                        if (wa10Digits) handleWhatsappCheck(whatsappNumber);
+                        else setIsWhatsappUsed(false);
+                      }}
+                      maxLength={13}
                     />
                   </div>
+                  {waOnlyWarning && !wa10Digits && (
+                    <div className="flex items-center gap-1 text-xs text-amber-700 bg-amber-100 p-1 rounded mt-1">
+                      <AlertCircle className="w-4 h-4" />
+                      Must be exactly 10 digits after +91.
+                    </div>
+                  )}
+                  {checkingNumber && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Checking number...
+                    </div>
+                  )}
+                  {isWhatsappUsed && wa10Digits && (
+                    <div className="text-xs text-destructive mt-1">
+                      This WhatsApp number is already registered by another
+                      business. Please use a different number.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-
             {/* Location Information */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -228,30 +272,15 @@ export default function OnboardingPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="address">Address</Label>
-                  <Input
-                    id="address"
-                    name="address"
-                    placeholder="Street address"
-                    disabled={isLoading}
-                  />
+                  <Input id="address" name="address" disabled={isLoading} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="city">City</Label>
-                  <Input
-                    id="city"
-                    name="city"
-                    placeholder="Mumbai"
-                    disabled={isLoading}
-                  />
+                  <Input id="city" name="city" disabled={isLoading} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
-                  <Input
-                    id="state"
-                    name="state"
-                    placeholder="Maharashtra"
-                    disabled={isLoading}
-                  />
+                  <Input id="state" name="state" disabled={isLoading} />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="website">Website (Optional)</Label>
@@ -261,7 +290,6 @@ export default function OnboardingPage() {
                       id="website"
                       name="website"
                       type="url"
-                      placeholder="https://yourbusiness.com"
                       className="pl-10"
                       disabled={isLoading}
                     />
@@ -269,17 +297,17 @@ export default function OnboardingPage() {
                 </div>
               </div>
             </div>
-
             {error && (
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
                 {error}
               </div>
             )}
-
             <Button
               type="submit"
               className="w-full h-12 text-base"
-              disabled={isLoading}
+              disabled={
+                isLoading || isWhatsappUsed || checkingNumber || !wa10Digits
+              }
             >
               {isLoading ? (
                 <>
