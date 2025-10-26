@@ -30,18 +30,40 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const isOnLoginPage = request.nextUrl.pathname.startsWith("/login")
+  const isOnOnboardingPage = request.nextUrl.pathname.startsWith("/onboarding")
+  const isOnAuthCallback = request.nextUrl.pathname.startsWith("/auth/callback")
+
   // Redirect to login if not authenticated and trying to access protected routes
-  if (!user && !request.nextUrl.pathname.startsWith("/login")) {
+  if (!user && !isOnLoginPage && !isOnAuthCallback) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
 
-  // Redirect to dashboard if authenticated and trying to access login
-  if (user && request.nextUrl.pathname.startsWith("/login")) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/"
-    return NextResponse.redirect(url)
+  if (user && !isOnLoginPage && !isOnAuthCallback) {
+    const { data: membership } = await supabase.from("user_memberships").select("id").eq("user_id", user.id).single()
+
+    // If no membership and not on onboarding page, redirect to onboarding
+    if (!membership && !isOnOnboardingPage) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/onboarding"
+      return NextResponse.redirect(url)
+    }
+
+    // If has membership and on onboarding page, redirect to dashboard
+    if (membership && isOnOnboardingPage) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/"
+      return NextResponse.redirect(url)
+    }
+
+    // If has membership and on login page, redirect to dashboard
+    if (membership && isOnLoginPage) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/"
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse
