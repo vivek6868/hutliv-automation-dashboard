@@ -1,8 +1,7 @@
 "use client";
 
 import type React from "react";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,26 +22,92 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Building2, Phone, Mail, MapPin, Globe } from "lucide-react";
 import { createBusinessProfile } from "./actions";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    async function checkMembership() {
+      console.log("[DEBUG] [OnboardingPage] Getting Supabase client");
+      const supabase = getSupabaseBrowserClient();
+
+      console.log("[DEBUG] [OnboardingPage] Fetching user...");
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.log(
+          "[DEBUG] [OnboardingPage] No user found or error:",
+          userError
+        );
+        return;
+      }
+      console.log("[DEBUG] [OnboardingPage] User is:", user);
+
+      console.log(
+        "[DEBUG] [OnboardingPage] Checking membership for user_id:",
+        user.id
+      );
+      // Query for user_id, not id
+      const { data: membership, error: membershipError } = await supabase
+        .from("user_memberships")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (membershipError) {
+        console.log(
+          "[DEBUG] [OnboardingPage] Membership query error:",
+          membershipError
+        );
+      } else {
+        console.log("[DEBUG] [OnboardingPage] Membership result:", membership);
+      }
+
+      // If already a member, redirect
+      if (active && membership) {
+        console.log(
+          "[DEBUG] [OnboardingPage] Membership exists, redirecting to home..."
+        );
+        router.replace("/"); // SPA navigation, not full reload
+      }
+    }
+    checkMembership();
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
     const formData = new FormData(e.currentTarget);
+    console.log(
+      "[DEBUG] [OnboardingPage] Submit business form data:",
+      Object.fromEntries(formData)
+    );
     try {
       const result = await createBusinessProfile(formData);
       if (result.error) {
+        console.log(
+          "[DEBUG] [OnboardingPage] Profile creation error:",
+          result.error
+        );
         setError(result.error);
       } else {
-        // Redirect to dashboard on success (FULL page refresh forces latest session + mem)
-        window.location.href = "/";
+        console.log(
+          "[DEBUG] [OnboardingPage] Profile creation success, redirecting..."
+        );
+        router.replace("/");
       }
     } catch (err) {
+      console.log("[DEBUG] [OnboardingPage] Unexpected error:", err);
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -77,7 +142,6 @@ export default function OnboardingPage() {
                 <Building2 className="w-5 h-5 text-primary" />
                 Business Information
               </h3>
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="business_name">Business Name *</Label>
@@ -89,7 +153,6 @@ export default function OnboardingPage() {
                     disabled={isLoading}
                   />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="business_type">Business Type</Label>
                   <Select name="business_type" disabled={isLoading}>
@@ -108,7 +171,6 @@ export default function OnboardingPage() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="phone_number">Phone Number</Label>
                   <div className="relative">
@@ -123,7 +185,6 @@ export default function OnboardingPage() {
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
@@ -138,7 +199,6 @@ export default function OnboardingPage() {
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="whatsapp_number">
                     WhatsApp Business Number *
@@ -165,7 +225,6 @@ export default function OnboardingPage() {
                 <MapPin className="w-5 h-5 text-primary" />
                 Location
               </h3>
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="address">Address</Label>
@@ -176,7 +235,6 @@ export default function OnboardingPage() {
                     disabled={isLoading}
                   />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="city">City</Label>
                   <Input
@@ -186,7 +244,6 @@ export default function OnboardingPage() {
                     disabled={isLoading}
                   />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
                   <Input
@@ -196,7 +253,6 @@ export default function OnboardingPage() {
                     disabled={isLoading}
                   />
                 </div>
-
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="website">Website (Optional)</Label>
                   <div className="relative">

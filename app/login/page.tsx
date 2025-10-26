@@ -1,67 +1,88 @@
-"use client"
+"use client";
 
-import type React from "react"
-
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { MessageSquare, Loader2, Mail, Lock } from "lucide-react"
-import { getSupabaseBrowserClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
+import type React from "react";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { MessageSquare, Loader2, Mail, Lock } from "lucide-react";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [rememberMe, setRememberMe] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
-  const [error, setError] = useState("")
-  const router = useRouter()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  // Checks membership and routes user appropriately
+  const loginAndRoute = async (supabase: any, userId: string) => {
+    const { data: membership } = await supabase
+      .from("user_memberships")
+      .select("user_id")
+      .eq("user_id", userId)
+      .single();
+
+    if (membership) {
+      router.push("/");
+    } else {
+      router.push("/onboarding");
+    }
+    router.refresh();
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError("")
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
 
     try {
-      const supabase = getSupabaseBrowserClient()
-      const { error } = await supabase.auth.signInWithPassword({
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
-      })
+      });
 
-      if (error) throw error
+      if (error) throw error;
 
-      router.push("/")
-      router.refresh()
+      // After successful login, get user (session may just be set)
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        await loginAndRoute(supabase, userData.user.id);
+      } else {
+        setError("Could not retrieve user session.");
+      }
     } catch (err: any) {
-      setError(err.message || "Failed to sign in")
+      setError(err.message || "Failed to sign in");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleGoogleLogin = async () => {
-    setIsGoogleLoading(true)
-    setError("")
+    setIsGoogleLoading(true);
+    setError("");
 
     try {
-      const supabase = getSupabaseBrowserClient()
+      const supabase = getSupabaseBrowserClient();
+      // For OAuth, redirect logic will occur via /auth/callback route on the server!
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
         },
-      })
+      });
 
-      if (error) throw error
+      if (error) throw error;
     } catch (err: any) {
-      setError(err.message || "Failed to sign in with Google")
-      setIsGoogleLoading(false)
+      setError(err.message || "Failed to sign in with Google");
+      setIsGoogleLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-background via-background to-primary/5">
@@ -82,7 +103,9 @@ export default function LoginPage() {
               <MessageSquare className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-balance">Welcome Back</h1>
-            <p className="text-muted-foreground text-pretty">Sign in to your WhatsApp Business Dashboard</p>
+            <p className="text-muted-foreground text-pretty">
+              Sign in to your WhatsApp Business Dashboard
+            </p>
           </div>
 
           {/* Error message */}
@@ -133,7 +156,9 @@ export default function LoginPage() {
               <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+              <span className="bg-card px-2 text-muted-foreground">
+                Or continue with email
+              </span>
             </div>
           </div>
 
@@ -183,10 +208,15 @@ export default function LoginPage() {
                 <Checkbox
                   id="remember"
                   checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setRememberMe(checked as boolean)
+                  }
                   disabled={isLoading || isGoogleLoading}
                 />
-                <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">
+                <Label
+                  htmlFor="remember"
+                  className="text-sm font-normal cursor-pointer"
+                >
                   Remember me
                 </Label>
               </div>
@@ -237,5 +267,5 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
-  )
+  );
 }
