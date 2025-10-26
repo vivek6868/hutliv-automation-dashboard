@@ -13,15 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  MessageSquare,
-  Megaphone,
-  Eye,
-  Reply,
-} from "lucide-react";
+import { TrendingUp, Users, Eye, Reply } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -33,7 +25,6 @@ import {
 } from "recharts";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-// Status config
 const statusConfig = {
   new: { label: "New", className: "bg-accent text-accent-foreground" },
   replied: {
@@ -44,35 +35,85 @@ const statusConfig = {
 };
 
 export default function DashboardPage() {
-  const [chartData, setChartData] = useState([]);
+  const [leadsOverLast7Days, setLeadsOverLast7Days] = useState([]);
   const [recentMessages, setRecentMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDashboardData() {
       setLoading(true);
+      setError(null);
       const supabase = getSupabaseBrowserClient();
 
-      // Example: fetch last 7 days' leads counts.
-      // Adjust table/fields as per your schema.
-      const { data: leadsRows, error: chartError } = await supabase.rpc(
-        "leads_per_day_last_week"
-      ); // Call a Postgres function or replace with a select/aggregate
-      setChartData(leadsRows || []);
+      // 1. Get user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError || !user) {
+        setError("Not authenticated");
+        setLoading(false);
+        return;
+      }
 
-      // Example: fetch 5 most recent messages
-      const { data: messagesRows, error: msgError } = await supabase
+      // 2. Get client_id
+      const { data: membership, error: memError } = await supabase
+        .from("user_memberships")
+        .select("client_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (memError || !membership?.client_id) {
+        setError("No client associated with this user.");
+        setLoading(false);
+        return;
+      }
+      const client_id = membership.client_id;
+
+      // 3. Get lead counts for the last 7 days
+      const today = new Date();
+      const days = Array.from({ length: 7 }).map((_, idx) => {
+        const d = new Date(today);
+        d.setDate(d.getDate() - (6 - idx));
+        const iso = d.toISOString().slice(0, 10);
+        return { day: iso, leads: 0 };
+      });
+
+      // 4. Fetch leads for last 7 days and group by day
+      const date7ago = new Date(today);
+      date7ago.setDate(today.getDate() - 6);
+      const { data: leadsData } = await supabase
+        .from("leads")
+        .select("id,created_at")
+        .eq("client_id", client_id)
+        .gte("created_at", date7ago.toISOString().slice(0, 10));
+
+      if (leadsData) {
+        leadsData.forEach((l) => {
+          const dateKey = new Date(l.created_at).toISOString().slice(0, 10);
+          const entry = days.find((d) => d.day === dateKey);
+          if (entry) entry.leads += 1;
+        });
+      }
+      setLeadsOverLast7Days(days);
+
+      // 5. Fetch 5 most recent messages for this client
+      const { data: recentMsgs } = await supabase
         .from("messages")
         .select("*")
+        .eq("client_id", client_id)
         .order("created_at", { ascending: false })
         .limit(5);
-      setRecentMessages(messagesRows || []);
+
+      setRecentMessages(recentMsgs || []);
       setLoading(false);
     }
     fetchDashboardData();
   }, []);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (error) return <div className="p-8 text-destructive">{error}</div>;
 
   return (
     <div className="flex flex-col">
@@ -88,30 +129,27 @@ export default function DashboardPage() {
           </p>
         </div>
       </header>
-
       {/* Main Content */}
       <div className="flex-1 space-y-6 p-6">
-        {/* Metrics Cards -- Replace with Supabase queries as needed */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Leads
+                Total Leads (last 7 days)
               </CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {/* example: sum leads from chartData */}
-                {chartData.reduce((sum, d) => sum + (d.leads || 0), 0)}
+                {leadsOverLast7Days.reduce((sum, d) => sum + (d.leads || 0), 0)}
               </div>
               <div className="flex items-center gap-1 text-xs text-accent">
                 <TrendingUp className="h-3 w-3" />
-                <span>+12.5% from last month</span>
+                <span>7-day total</span>
               </div>
             </CardContent>
           </Card>
-          {/* ...other cards—update with real data as desired */}
+          {/* Add more cards as you implement more metrics */}
         </div>
 
         {/* Recent Messages Table */}
@@ -123,34 +161,39 @@ export default function DashboardPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Customer Name</TableHead>
-                  <TableHead>Phone Number</TableHead>
+                  <TableHead>Direction</TableHead>
+                  <TableHead>Kind</TableHead>
                   <TableHead>Message Preview</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Sent At</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recentMessages.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.phone}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">
-                      {m.message}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(m.created_at).toLocaleString()}
-                    </TableCell>
                     <TableCell>
                       <Badge
-                        variant="secondary"
-                        className={statusConfig[m.status]?.className || ""}
+                        color={
+                          m.direction === "inbound" ? "secondary" : "default"
+                        }
                       >
-                        {statusConfig[m.status]?.label ?? m.status}
+                        {m.direction}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge>{m.kind}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">
+                      {m.body || (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {m.sent_at
+                        ? new Date(m.sent_at).toLocaleString()
+                        : m.created_at
+                        ? new Date(m.created_at).toLocaleString()
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -177,7 +220,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+                <LineChart data={leadsOverLast7Days}>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     className="stroke-border"
